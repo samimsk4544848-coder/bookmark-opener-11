@@ -5,11 +5,14 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
+import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.HashSet;
@@ -81,16 +84,34 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openUrls(String json, String pkg) {
-            try {
-                JSONArray urls = new JSONArray(json);
-                for (int k = 0; k < urls.length(); k++) {
-                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(urls.getString(k)));
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    if (pkg != null && pkg.length() > 0) i.setPackage(pkg);
-                    startActivity(i);
+        public void openUrls(final String json, final String pkg) {
+            if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(MainActivity.this)) {
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        Toast.makeText(MainActivity.this, "Allow 'Display over other apps', then come back and tap Open again", Toast.LENGTH_LONG).show();
+                        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+                    }
+                });
+                return;
+            }
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        JSONArray urls = new JSONArray(json);
+                        for (int k = 0; k < urls.length(); k++) {
+                            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(urls.getString(k)));
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            i.putExtra("create_new_tab", true);
+                            if (pkg != null && pkg.length() > 0) {
+                                i.setPackage(pkg);
+                                i.putExtra("com.android.browser.application_id", pkg);
+                            }
+                            startActivity(i);
+                            Thread.sleep(800);
+                        }
+                    } catch (Exception e) { }
                 }
-            } catch (Exception e) { }
+            }).start();
         }
     }
 }
