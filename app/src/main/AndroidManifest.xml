@@ -8,7 +8,9 @@
             <data android:scheme="https" />
         </intent>
     </queries>
-    <application android:label="Bookmark Opener"
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="Bookmark Opener"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
