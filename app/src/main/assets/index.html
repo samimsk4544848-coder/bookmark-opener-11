@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bookmark Opener</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#f6f7f4;--card:#fff;--ink:#1d2a24;--mute:#66726b;--line:#d9ded8;--acc:#1f6f54;--accink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#141a17;--card:#1c2420;--ink:#e6ece8;--mute:#93a39a;--line:#2f3a34;--acc:#4cc39a;--accink:#07261b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:8px 0 4px}
+p.s{color:var(--mute);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+textarea{width:100%;height:90px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:8px;font:13px monospace}
+button,a.btn{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 13px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
+button.p{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+input[type=search]{flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:8px;font:inherit}
+.bar{position:sticky;top:0;z-index:5}
+details{border-top:1px solid var(--line);padding:6px 0}
+summary{cursor:pointer;display:flex;gap:8px;align-items:center;font-weight:600}
+label.l{display:flex;gap:8px;align-items:flex-start;padding:5px 0 5px 22px;word-break:break-all}
+label.l small{color:var(--mute);display:block}
+label.l a.btn{padding:3px 10px;margin-top:4px;font-size:.85rem}
+input[type=checkbox]{width:18px;height:18px;margin-top:3px;accent-color:var(--acc);flex:none}
+#msg{color:var(--mute);margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>Bookmark Opener</h1>
+<p class="s">Load a bookmarks file exported from Chrome, tick the links you want, and open them in separate tabs.</p>
+
+<div class="card">
+<div class="row" style="margin-top:0"><input type="file" id="f" accept=".html,.htm"></div>
+<p class="s" style="margin:10px 0 4px">Or paste the bookmarks HTML here:</p>
+<textarea id="t" placeholder="&lt;DL&gt;&lt;p&gt;..."></textarea>
+<div class="row"><button class="p" id="load">Load links</button></div>
+</div>
+
+<div id="app" hidden>
+<div class="card bar">
+<div class="row" style="margin-top:0"><input type="search" id="q" placeholder="Search by name or link">
+<button id="all">Select all</button><button id="none">Clear</button></div>
+<div class="row"><button class="p" id="open">Open selected</button></div>
+<div class="row" id="brrow" hidden>Open in: <select id="br"></select></div>
+<div id="msg"></div>
+</div>
+<div class="card" id="queue" hidden></div>
+<div class="card" id="list"></div>
+</div>
+</main>
+
+<script>
+var items=[],sel=new Set();
+var $=function(i){return document.getElementById(i)};
+function esc(s){return s.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+function parse(html){
+  var d=new DOMParser().parseFromString(html,'text/html'),out=[],seen={};
+  d.querySelectorAll('a[href]').forEach(function(a){
+    var u=a.getAttribute('href');
+    if(!/^https?:\/\//i.test(u)||seen[u])return;
+    seen[u]=1;
+    var folder='(No folder)',dl=a.closest('dl');
+    while(dl){
+      var prev=dl.previousElementSibling;
+      if(prev&&(prev.tagName==='DT'||prev.tagName==='H3')){
+        var h=prev.tagName==='H3'?prev:prev.querySelector('h3');
+        if(h){folder=h.textContent.trim();break}
+      }
+      dl=dl.parentElement&&dl.parentElement.closest('dl');
+    }
+    out.push({u:u,t:(a.textContent||u).trim()||u,f:folder});
+  });
+  return out;
+}
+
+function render(){
+  var q=$('q').value.toLowerCase(),g={};
+  items.forEach(function(it,i){
+    if(q&&(it.t+it.u).toLowerCase().indexOf(q)<0)return;
+    (g[it.f]=g[it.f]||[]).push(i);
+  });
+  var h='';
+  Object.keys(g).forEach(function(f){
+    var ids=g[f],all=ids.every(function(i){return sel.has(i)});
+    h+='<details open><summary><input type="checkbox" data-f="'+ids.join(',')+'"'+(all?' checked':'')+'> '+esc(f)+' ('+ids.length+')</summary>';
+    ids.forEach(function(i){
+      h+='<label class="l"><input type="checkbox" data-i="'+i+'"'+(sel.has(i)?' checked':'')+'><span>'+esc(items[i].t)+'<small>'+esc(items[i].u)+'</small><a class="btn" href="'+esc(items[i].u)+'" target="_blank" rel="noopener">Open this one</a></span></label>';
+    });
+    h+='</details>';
+  });
+  $('list').innerHTML=h||'Nothing found.';
+  count();
+}
+function count(){
+  $('msg').textContent=items.length+' links, '+sel.size+' selected.';
+  $('open').textContent='Open selected ('+sel.size+')';
+}
+function queue(m){
+  var q=$('queue');
+  if(!m.length){q.hidden=true;return}
+  q.hidden=false;
+  q.innerHTML='<b>The browser blocked these. Tap each one to open it:</b>'+m.map(function(i){
+    return '<a class="btn" style="display:block;margin-top:8px;word-break:break-all" href="'+esc(items[i].u)+'" target="_blank" rel="noopener">'+esc(items[i].t)+'</a>';
+  }).join('');
+}
+function load(html){
+  items=parse(html);sel=new Set();
+  if(!items.length){alert('No links found. Make sure this is the exported bookmarks HTML file.');return}
+  $('app').hidden=false;render();
+}
+
+$('f').onchange=function(e){
+  var r=new FileReader();r.onload=function(){load(r.result)};
+  if(e.target.files[0])r.readAsText(e.target.files[0]);
+};
+$('load').onclick=function(){load($('t').value)};
+$('q').oninput=render;
+$('all').onclick=function(){
+  var q=$('q').value.toLowerCase();
+  items.forEach(function(it,i){if(!q||(it.t+it.u).toLowerCase().indexOf(q)>=0)sel.add(i)});render();
+};
+$('none').onclick=function(){sel.clear();render()};
+$('list').onchange=function(e){
+  var c=e.target;
+  if(c.dataset.i!==undefined){if(c.checked)sel.add(+c.dataset.i);else sel.delete(+c.dataset.i)}
+  else if(c.dataset.f){c.dataset.f.split(',').forEach(function(i){if(c.checked)sel.add(+i);else sel.delete(+i)});render();return}
+  count();
+};
+
+$('open').onclick=function(){
+  var list=Array.from(sel).sort(function(a,b){return a-b});
+  if(!list.length){$('msg').textContent='Select some links first.';return}
+  var miss=[],k=0,ok=0,btn=$('open');btn.disabled=true;
+  (function next(){
+    if(k>=list.length){
+      btn.disabled=false;
+      $('msg').textContent=ok+' opened'+(miss.length?', '+miss.length+' blocked by the browser (see the list below)':'')+'.';
+      queue(miss);return;
+    }
+    var i=list[k++],w=window.open(items[i].u,'_blank');
+    if(w)ok++;else miss.push(i);
+    $('msg').textContent='Opening '+k+'/'+list.length+'...';
+    setTimeout(next,350);
+  })();
+};
+
+if(window.Android){
+  try{
+    var bl=JSON.parse(Android.getBrowsers()),sb=$('br');
+    bl.forEach(function(b){var o=document.createElement('option');o.value=b.pkg;o.textContent=b.name;sb.appendChild(o)});
+    $('brrow').hidden=false;
+  }catch(e){}
+  $('open').onclick=function(){
+    var list=Array.from(sel).sort(function(a,b){return a-b});
+    if(!list.length){$('msg').textContent='Select some links first.';return}
+    Android.openUrls(JSON.stringify(list.map(function(i){return items[i].u})),$('br').value);
+    $('msg').textContent=list.length+' links sent to the browser.';
+  };
+}
+</script>
+</body>
+</html>
